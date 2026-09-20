@@ -14,5 +14,6 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public int GpuId { get; set; } = -1;
     public bool EnableTta { get; set; }
     public bool KeepOriginalBackup { get; set; } = true;
+    public bool Include720pBackdrops { get; set; }
     public bool SingleImageTestMode { get; set; }
 }
