@@ -1,0 +1,37 @@
+name: Sync GitHub Release Notes
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/sync-release-notes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply notes to published releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for notes in release-notes/*.md; do
+            version="$(basename "$notes" .md)"
+            tag="v$version"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Updating $tag from $notes"
+              gh release edit "$tag" --title "$tag" --notes-file "$notes"
+            else
+              echo "Skipping $tag because no published release exists."
+            fi
+          done
