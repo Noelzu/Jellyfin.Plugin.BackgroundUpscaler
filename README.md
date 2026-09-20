@@ -1,82 +1,211 @@
 # Background Upscaler for Jellyfin 12.1
 
-Background Upscaler is a Jellyfin 12.1 / .NET 10 plugin that uses **Real-ESRGAN ncnn Vulkan** to improve local artwork while upscaling it from **exactly 1920×1080** to **exactly 3840×2160**.
+Background Upscaler is a Jellyfin 12.1 / .NET 10 plugin that uses **Real-ESRGAN ncnn Vulkan** to improve Jellyfin **Backdrop** images while upscaling them from **exactly 1920×1080** to **exactly 3840×2160**.
 
 ## Features
 
-- Scheduled task: **Upscale exact 1080p artwork to 4K**
-- Per-library enable/disable checkboxes
-- Only processes local JPG/JPEG/PNG/WebP files whose real dimensions are exactly 1920×1080
-- Uses Real-ESRGAN 2× AI super-resolution rather than ordinary resizing
-- Validates 3840×2160 output before replacing the source
-- Optional original backup
+- Scheduled task: **Upscale exact 1080p Backdrops to 4K**
+- Per-library enable/disable selection
+- **Backdrop-only** processing: Primary/poster, Thumb, Logo, Banner and other image types are ignored
+- Only local JPG/JPEG/PNG/WebP Backdrops whose real dimensions are exactly 1920×1080 are eligible
+- Real-ESRGAN 2× AI super-resolution rather than ordinary resizing
+- Validates the generated image as exactly 3840×2160 before replacing the source
+- Optional original backup, enabled by default for new configurations
+- **Single-image test mode** to process at most one eligible Backdrop per task run
 - GPU ID, tile size, model directory, model and TTA settings
-- Repairs Jellyfin image metadata if the file was already upscaled but metadata was not saved
+- Per-image elapsed-time logging
+- Repairs Jellyfin image metadata when a file is already 3840×2160 but its stored dimensions are stale
 
-The default schedule is Sunday at 04:00 and can be changed in Jellyfin's Scheduled Tasks page.
+The default schedule is Sunday at 04:00 and can be changed in Jellyfin's normal Scheduled Tasks page.
 
 ## Install from the combined Noelzu plugin repository
 
-The repository feed contains all currently published Noelzu Jellyfin plugins:
+The combined feed currently contains:
 
 - **Anime Season Collections**
 - **Background Upscaler**
 
-Add this URL in **Dashboard → Plugins → Repositories**:
+Add one of these URLs in **Dashboard → Plugins → Repositories**:
 
 ```text
 https://raw.githubusercontent.com/Noelzu/Jellyfin.Plugin.BackgroundUpscaler/main/manifest.json
 ```
 
-The existing Anime Season Collections manifest URL contains the same combined catalog:
+or:
 
 ```text
 https://raw.githubusercontent.com/Noelzu/Jellyfin.Plugin.AnimeSeasonCollections/main/manifest.json
 ```
 
-Use a repository name such as **Noelzu Jellyfin Plugins**. You only need to add one of the two URLs.
+Use a repository name such as **Noelzu Jellyfin Plugins**. Both URLs expose the same combined catalog, so only one is needed.
 
-## Requirements
+## Real-ESRGAN files
 
-- Jellyfin Server 12.1.x
-- `realesrgan-ncnn-vulkan` and its model files available inside the Jellyfin host/container
-- Vulkan-capable GPU/driver
-- Write permission for the artwork files
+A typical host layout is:
 
-Example Docker mount:
+```text
+/docker/tools/realesrgan/
+├── realesrgan-ncnn-vulkan
+└── models/
+    ├── realesr-animevideov3-x2.bin
+    ├── realesr-animevideov3-x2.param
+    ├── realesr-animevideov3-x3.bin
+    ├── realesr-animevideov3-x3.param
+    ├── realesr-animevideov3-x4.bin
+    ├── realesr-animevideov3-x4.param
+    ├── realesrgan-x4plus-anime.bin
+    ├── realesrgan-x4plus-anime.param
+    ├── realesrgan-x4plus.bin
+    └── realesrgan-x4plus.param
+```
+
+Mount it into Jellyfin:
 
 ```yaml
 volumes:
   - /docker/tools/realesrgan:/opt/realesrgan:ro
 ```
 
-Typical configuration:
+## Container requirements
+
+The portable Real-ESRGAN binary still needs the Vulkan/OpenMP runtime inside the Jellyfin container. For the LinuxServer Jellyfin image, install:
 
 ```text
-Executable: /opt/realesrgan/realesrgan-ncnn-vulkan
-Model directory: /opt/realesrgan/models
+libvulkan1
+mesa-vulkan-drivers
+vulkan-tools
+libgomp1
 ```
+
+Do **not** rely on manually running `apt install` inside an already-running container: those packages disappear when the container is recreated or updated.
+
+### Recommended: custom Jellyfin image
+
+Create a Dockerfile, for example at `/docker/jellyfin-custom/Dockerfile`:
+
+```dockerfile
+FROM lscr.io/linuxserver/jellyfin:latest
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libvulkan1 \
+        mesa-vulkan-drivers \
+        vulkan-tools \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Then use that image from your Compose/Portainer stack:
+
+```yaml
+services:
+  jellyfin:
+    build:
+      context: /docker/jellyfin-custom
+    image: jellyfin-with-vulkan:latest
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    volumes:
+      - /docker/tools/realesrgan:/opt/realesrgan:ro
+```
+
+This makes the required packages part of the Docker image. They survive container recreation. A plain `apt install` command in the running container does not.
+
+If your Portainer installation cannot build a local Dockerfile from the stack, build it once on the host:
+
+```bash
+docker build -t jellyfin-with-vulkan:latest /docker/jellyfin-custom
+```
+
+and keep only:
+
+```yaml
+image: jellyfin-with-vulkan:latest
+```
+
+in the stack.
+
+## Recommended configuration
+
+For anime artwork, especially on lower-power Intel iGPUs, start with:
+
+```text
+Executable:          /opt/realesrgan/realesrgan-ncnn-vulkan
+Model directory:     /opt/realesrgan/models
+Model:               realesr-animevideov3
+Tile size:           0
+GPU ID:              0
+TTA:                 Off
+Keep original backup: On
+Single-image test mode: On while testing
+```
+
+After visually verifying several test results, disable **Single-image test mode** for a normal batch.
+
+### Model notes
+
+- **realesr-animevideov3** — recommended starting point for anime/illustration and lower-power GPUs.
+- **realesrgan-x4plus-anime** — heavier anime model. It may be slower or unstable on some weaker/older Vulkan GPUs.
+- **realesrgan-x4plus** — heavier general-purpose model.
+
+If a model produces tiled/block-corrupted output on a GPU, stop the task and switch models before processing more images.
 
 ## Configuration
 
 Open **Dashboard → Plugins → Background Upscaler**.
 
-Select the libraries that may be processed, then configure the Real-ESRGAN executable, model, model directory, tile size, GPU ID, TTA and backup behavior.
+Choose the libraries that may be processed. Only Backdrop images from those libraries are considered.
 
-If no libraries are selected, the scheduled task does nothing.
+The plugin deliberately ignores:
+
+- Primary/poster images
+- Thumbs
+- Logos
+- Banners
+- every other non-Backdrop Jellyfin image type
+
+If no libraries are selected, the task does nothing.
 
 ## Safety behavior
 
-A source is replaced only when:
+A file is replaced only when:
 
-1. It belongs to a selected library.
-2. It is a local supported image file.
-3. Its actual dimensions are exactly 1920×1080.
-4. Real-ESRGAN completes successfully.
-5. The output exists and is non-empty.
-6. Jellyfin reads the output as exactly 3840×2160.
+1. It is referenced by Jellyfin as an **ImageType.Backdrop**.
+2. It belongs to a selected library.
+3. It is a local JPG/JPEG/PNG/WebP file.
+4. Its actual dimensions are exactly 1920×1080.
+5. Real-ESRGAN exits successfully.
+6. The output exists and is non-empty.
+7. Jellyfin can decode the output.
+8. The decoded output is exactly 3840×2160.
 
-Already-4K images and every other source resolution are skipped.
+Already-4K Backdrops and every other source resolution are skipped.
+
+When backups are enabled, the original is preserved once as:
+
+```text
+image.ext.backgroundupscale-original.bak
+```
+
+## GPU verification
+
+Inside the Jellyfin container:
+
+```bash
+vulkaninfo --summary
+```
+
+For an Intel iGPU, verify it appears as a physical GPU and use its GPU ID in the plugin if automatic selection is unreliable.
+
+Check missing runtime libraries with:
+
+```bash
+ldd /opt/realesrgan/realesrgan-ncnn-vulkan | grep "not found"
+```
+
+No output means all linked libraries were found.
 
 ## Build
 
@@ -89,7 +218,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-Windows PowerShell:
+Windows:
 
 ```powershell
 ./build.ps1
@@ -98,7 +227,7 @@ Windows PowerShell:
 The release ZIP is written as:
 
 ```text
-dist/BackgroundUpscaler_12.1.0.2.zip
+dist/BackgroundUpscaler_12.1.0.4.zip
 ```
 
 ## Manual install
@@ -106,7 +235,7 @@ dist/BackgroundUpscaler_12.1.0.2.zip
 Extract the release ZIP into a Jellyfin plugin directory such as:
 
 ```text
-/config/data/plugins/Background Upscaler_12.1.0.2/
+/config/data/plugins/Background Upscaler_12.1.0.4/
 ```
 
 Restart Jellyfin after installation.
@@ -116,4 +245,4 @@ Restart Jellyfin after installation.
 - Jellyfin Server: 12.1.x
 - Target framework: net10.0
 - Jellyfin API packages: 12.1.0
-- Current plugin version: 12.1.0.2
+- Current plugin version: 12.1.0.4
