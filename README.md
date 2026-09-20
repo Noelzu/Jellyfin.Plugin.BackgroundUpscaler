@@ -1,13 +1,14 @@
 # Background Upscaler for Jellyfin 12.1
 
-Background Upscaler is a Jellyfin 12.1 / .NET 10 plugin that uses **Real-ESRGAN ncnn Vulkan** to improve Jellyfin **Backdrop** images while upscaling them from **exactly 1920×1080** to **exactly 3840×2160**.
+Background Upscaler is a Jellyfin 12.1 / .NET 10 plugin that uses **Real-ESRGAN ncnn Vulkan** to improve Jellyfin **Backdrop** images while upscaling exact **1920×1080** Backdrops to **3840×2160**, with an optional toggle for exact **1280×720** Backdrops.
 
 ## Features
 
 - Scheduled task: **Upscale exact 1080p Backdrops to 4K**
 - Per-library enable/disable selection
 - **Backdrop-only** processing: Primary/poster, Thumb, Logo, Banner and other image types are ignored
-- Only local JPG/JPEG/PNG/WebP Backdrops whose real dimensions are exactly 1920×1080 are eligible
+- Exact 1920×1080 Backdrops are always eligible and use 2× scaling
+- Optional **Include 1280×720 Backdrops** toggle; when enabled those use 3× scaling to reach 3840×2160
 - Real-ESRGAN 2× AI super-resolution rather than ordinary resizing
 - Validates the generated image as exactly 3840×2160 before replacing the source
 - Optional original backup, enabled by default for new configurations
@@ -139,6 +140,7 @@ Tile size:           0
 GPU ID:              0
 TTA:                 Off
 Keep original backup: On
+Include 1280×720 Backdrops: Off (enable if desired)
 Single-image test mode: On while testing
 ```
 
@@ -175,13 +177,13 @@ A file is replaced only when:
 1. It is referenced by Jellyfin as an **ImageType.Backdrop**.
 2. It belongs to a selected library.
 3. It is a local JPG/JPEG/PNG/WebP file.
-4. Its actual dimensions are exactly 1920×1080.
-5. Real-ESRGAN exits successfully.
+4. Its actual dimensions are exactly 1920×1080, or exactly 1280×720 when the optional 720p toggle is enabled.
+5. Real-ESRGAN uses 2× for 1080p or 3× for 720p and exits successfully.
 6. The output exists and is non-empty.
 7. Jellyfin can decode the output.
 8. The decoded output is exactly 3840×2160.
 
-Already-4K Backdrops and every other source resolution are skipped.
+Already-4K Backdrops are skipped. With the 720p toggle disabled, every source resolution except exact 1920×1080 is skipped; with it enabled, exact 1280×720 is also accepted.
 
 When backups are enabled, the original is preserved once as:
 
@@ -227,7 +229,7 @@ Windows:
 The release ZIP is written as:
 
 ```text
-dist/BackgroundUpscaler_12.1.0.4.zip
+dist/BackgroundUpscaler_12.1.0.5.zip
 ```
 
 ## Manual install
@@ -235,7 +237,7 @@ dist/BackgroundUpscaler_12.1.0.4.zip
 Extract the release ZIP into a Jellyfin plugin directory such as:
 
 ```text
-/config/data/plugins/Background Upscaler_12.1.0.4/
+/config/data/plugins/Background Upscaler_12.1.0.5/
 ```
 
 Restart Jellyfin after installation.
@@ -245,4 +247,4 @@ Restart Jellyfin after installation.
 - Jellyfin Server: 12.1.x
 - Target framework: net10.0
 - Jellyfin API packages: 12.1.0
-- Current plugin version: 12.1.0.4
+- Current plugin version: 12.1.0.5
