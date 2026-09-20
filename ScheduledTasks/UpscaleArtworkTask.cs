@@ -96,7 +96,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
         var query = new InternalItemsQuery
         {
-            TopParentIds = selectedLibraryIds,
+            AncestorIds = selectedLibraryIds,
             Recursive = true,
             IsVirtualItem = false,
             GroupByPresentationUniqueKey = false,
