@@ -66,13 +66,21 @@ jobs:
         shell: bash
         run: |
           TAG="v${VERSION}"
+          NOTES_FILE="release-notes/${VERSION}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES_ARGS=(--notes "Background Upscaler $VERSION for Jellyfin 12.1.")
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ZIP" --clobber
+            gh release edit "$TAG" --title "$TAG" "${NOTES_ARGS[@]}"
           else
             gh release create "$TAG" "$ZIP" \
               --target main \
               --title "$TAG" \
-              --notes "Background Upscaler $VERSION for Jellyfin 12.1."
+              "${NOTES_ARGS[@]}"
           fi
 
       - name: Update Background Upscaler entry in combined manifest
