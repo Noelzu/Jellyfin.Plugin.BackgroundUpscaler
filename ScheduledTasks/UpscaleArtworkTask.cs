@@ -19,8 +19,10 @@ namespace Jellyfin.Plugin.BackgroundUpscaler.ScheduledTasks;
 
 public sealed class UpscaleArtworkTask : IScheduledTask
 {
-    private const int SourceWidth = 1920;
-    private const int SourceHeight = 1080;
+    private const int Source1080Width = 1920;
+    private const int Source1080Height = 1080;
+    private const int Source720Width = 1280;
+    private const int Source720Height = 720;
     private const int TargetWidth = 3840;
     private const int TargetHeight = 2160;
 
@@ -46,9 +48,9 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         _imageProcessor = imageProcessor;
     }
 
-    public string Name => "Upscale exact 1080p Backdrops to 4K";
+    public string Name => "Upscale Backdrops to 4K";
     public string Key => "BackgroundUpscalerExact1080To4K";
-    public string Description => "Uses Real-ESRGAN to enhance local Backdrop images that are exactly 1920x1080 and replace them with a validated 3840x2160 result.";
+    public string Description => "Uses Real-ESRGAN to enhance exact 1920x1080 Backdrops to 3840x2160, with optional exact 1280x720 Backdrop support.";
     public string Category => "Background Upscaler";
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -108,11 +110,10 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
         var items = _libraryManager.GetItemList(query);
         _logger.LogInformation(
-            "Scanning {ItemCount} items in {LibraryCount} selected libraries for exact {SourceWidth}x{SourceHeight} Backdrop images only. SingleImageTestMode={SingleImageTestMode}.",
+            "Scanning {ItemCount} items in {LibraryCount} selected libraries for exact 1920x1080 Backdrops{Include720Text}. SingleImageTestMode={SingleImageTestMode}.",
             items.Count,
             selectedLibraryIds.Length,
-            SourceWidth,
-            SourceHeight,
+            config.Include720pBackdrops ? " and exact 1280x720 Backdrops" : string.Empty,
             config.SingleImageTestMode);
 
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -181,7 +182,18 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                         continue;
                     }
 
-                    if (dimensions.Width != SourceWidth || dimensions.Height != SourceHeight)
+                    int scale;
+                    if (dimensions.Width == Source1080Width && dimensions.Height == Source1080Height)
+                    {
+                        scale = 2;
+                    }
+                    else if (config.Include720pBackdrops
+                             && dimensions.Width == Source720Width
+                             && dimensions.Height == Source720Height)
+                    {
+                        scale = 3;
+                    }
+                    else
                     {
                         continue;
                     }
@@ -189,14 +201,17 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                     eligible++;
                     attemptedEligibleImage = true;
                     _logger.LogInformation(
-                        "Upscaling Backdrop for {ItemName} ({ItemId}) with model {ModelName}: {Path}",
+                        "Upscaling {SourceWidth}x{SourceHeight} Backdrop for {ItemName} ({ItemId}) with model {ModelName} at {Scale}x: {Path}",
+                        dimensions.Width,
+                        dimensions.Height,
                         item.Name,
                         item.Id,
                         config.ModelName,
+                        scale,
                         sourcePath);
 
                     var stopwatch = Stopwatch.StartNew();
-                    await UpscaleAndReplaceAsync(sourcePath, upscalerExecutable, config, cancellationToken).ConfigureAwait(false);
+                    await UpscaleAndReplaceAsync(sourcePath, upscalerExecutable, scale, config, cancellationToken).ConfigureAwait(false);
                     stopwatch.Stop();
 
                     var finalDimensions = _imageProcessor.GetImageDimensions(sourcePath);
@@ -340,7 +355,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         return configured;
     }
 
-    private async Task UpscaleAndReplaceAsync(string sourcePath, string upscalerExecutable, PluginConfiguration config, CancellationToken cancellationToken)
+    private async Task UpscaleAndReplaceAsync(string sourcePath, string upscalerExecutable, int scale, PluginConfiguration config, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(sourcePath);
         var format = GetRealEsrganFormat(extension);
@@ -352,7 +367,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
         try
         {
-            await RunRealEsrganAsync(sourcePath, tempPath, format, upscalerExecutable, config, cancellationToken).ConfigureAwait(false);
+            await RunRealEsrganAsync(sourcePath, tempPath, format, upscalerExecutable, scale, config, cancellationToken).ConfigureAwait(false);
 
             if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
             {
@@ -388,6 +403,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         string outputPath,
         string format,
         string upscalerExecutable,
+        int scale,
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
@@ -405,7 +421,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         startInfo.ArgumentList.Add("-o");
         startInfo.ArgumentList.Add(outputPath);
         startInfo.ArgumentList.Add("-s");
-        startInfo.ArgumentList.Add("2");
+        startInfo.ArgumentList.Add(scale.ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("-n");
         startInfo.ArgumentList.Add(string.IsNullOrWhiteSpace(config.ModelName) ? "realesr-animevideov3" : config.ModelName.Trim());
         startInfo.ArgumentList.Add("-t");
