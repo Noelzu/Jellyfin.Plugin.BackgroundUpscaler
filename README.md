@@ -98,7 +98,7 @@ Windows PowerShell:
 The release ZIP is written as:
 
 ```text
-dist/BackgroundUpscaler_12.1.0.1.zip
+dist/BackgroundUpscaler_12.1.0.2.zip
 ```
 
 ## Manual install
@@ -106,7 +106,7 @@ dist/BackgroundUpscaler_12.1.0.1.zip
 Extract the release ZIP into a Jellyfin plugin directory such as:
 
 ```text
-/config/data/plugins/Background Upscaler_12.1.0.1/
+/config/data/plugins/Background Upscaler_12.1.0.2/
 ```
 
 Restart Jellyfin after installation.
@@ -116,4 +116,4 @@ Restart Jellyfin after installation.
 - Jellyfin Server: 12.1.x
 - Target framework: net10.0
 - Jellyfin API packages: 12.1.0
-- Current plugin version: 12.1.0.1
+- Current plugin version: 12.1.0.2
