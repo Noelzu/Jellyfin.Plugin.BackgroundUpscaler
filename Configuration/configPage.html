@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Background Upscaler</title>
+</head>
+<body>
+<div id="BackgroundUpscalerConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="BackgroundUpscalerConfigForm">
+                <h2>Background Upscaler</h2>
+                <p>
+                    The scheduled task processes only local JPG, JPEG, PNG and WebP artwork whose real file dimensions are
+                    <strong>exactly 1920 × 1080</strong>. Real-ESRGAN performs a 2× AI upscale and the result must validate as
+                    <strong>3840 × 2160</strong> before the original is replaced.
+                </p>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="Enabled" type="checkbox" is="emby-checkbox" />
+                        <span>Enable processing</span>
+                    </label>
+                    <div class="fieldDescription">When disabled, the scheduled task exits without modifying files.</div>
+                </div>
+
+                <h3>Affected libraries</h3>
+                <div id="LibraryList" class="paperList" style="padding: .5em 1em; margin-bottom: 1.5em;"></div>
+                <div class="fieldDescription" style="margin-top: -1em; margin-bottom: 1.5em;">
+                    Only artwork belonging to checked libraries is eligible. If no libraries are checked, nothing is processed.
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="UpscalerExecutable">Real-ESRGAN executable</label>
+                    <input id="UpscalerExecutable" type="text" is="emby-input" />
+                    <div class="fieldDescription">
+                        Executable path inside the Jellyfin server/container, or <code>realesrgan-ncnn-vulkan</code> if it is on PATH.
+                    </div>
+                </div>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="ModelName">Model</label>
+                    <select id="ModelName" is="emby-select" class="emby-select-withcolor emby-select">
+                        <option value="realesrgan-x4plus">realesrgan-x4plus — general artwork</option>
+                        <option value="realesrgan-x4plus-anime">realesrgan-x4plus-anime — anime / illustration</option>
+                        <option value="realesr-animevideov3">realesr-animevideov3 — animation, fast</option>
+                        <option value="realesrnet-x4plus">realesrnet-x4plus</option>
+                    </select>
+                    <div class="fieldDescription">The task always requests scale 2; its output dimension is validated before replacement.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ModelPath">Model directory (optional)</label>
+                    <input id="ModelPath" type="text" is="emby-input" />
+                    <div class="fieldDescription">Passed to Real-ESRGAN with <code>-m</code>. Leave empty to use its default models directory.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TileSize">Tile size</label>
+                    <input id="TileSize" type="number" min="0" step="1" is="emby-input" />
+                    <div class="fieldDescription">0 = automatic. Lower explicit values use less GPU memory.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="GpuId">GPU ID</label>
+                    <input id="GpuId" type="number" min="-1" step="1" is="emby-input" />
+                    <div class="fieldDescription">-1 = automatic. Otherwise 0, 1, 2, ...</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="EnableTta" type="checkbox" is="emby-checkbox" />
+                        <span>Enable TTA</span>
+                    </label>
+                    <div class="fieldDescription">Can improve results slightly but substantially increases processing time.</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="KeepOriginalBackup" type="checkbox" is="emby-checkbox" />
+                        <span>Keep original backup</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Before a successful replacement, creates <code>image.ext.backgroundupscale-original.bak</code> once. The .bak suffix prevents Jellyfin from treating it as artwork.
+                    </div>
+                </div>
+
+                <div class="fieldDescription" style="margin: 1em 0 1.5em 0;">
+                    The task appears under <strong>Dashboard → Scheduled Tasks → Background Upscaler</strong>. Its default trigger is Sunday at 04:00 and can be changed in Jellyfin's normal scheduled-task UI.
+                </div>
+
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                    <span>Save</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            const pluginId = '4e0caa51-128e-4faa-8267-0d9d2b256a1e';
+            const page = document.querySelector('#BackgroundUpscalerConfigPage');
+            const form = document.querySelector('#BackgroundUpscalerConfigForm');
+            const libraryList = document.querySelector('#LibraryList');
+
+            function renderLibraries(folders, selectedIds) {
+                libraryList.replaceChildren();
+                const selected = new Set(selectedIds || []);
+                const validFolders = (folders || [])
+                    .filter(function (folder) { return folder && folder.ItemId; })
+                    .sort(function (a, b) { return (a.Name || '').localeCompare(b.Name || ''); });
+
+                if (!validFolders.length) {
+                    const empty = document.createElement('div');
+                    empty.textContent = 'No Jellyfin libraries were returned.';
+                    libraryList.appendChild(empty);
+                    return;
+                }
+
+                validFolders.forEach(function (folder) {
+                    const row = document.createElement('label');
+                    row.style.display = 'block';
+                    row.style.padding = '.45em 0';
+                    row.style.cursor = 'pointer';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'libraryToggle';
+                    checkbox.value = folder.ItemId;
+                    checkbox.checked = selected.has(folder.ItemId);
+                    checkbox.style.marginRight = '.75em';
+
+                    const text = document.createElement('span');
+                    text.textContent = folder.Name || folder.ItemId;
+
+                    row.appendChild(checkbox);
+                    row.appendChild(text);
+                    libraryList.appendChild(row);
+                });
+            }
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                Promise.all([
+                    ApiClient.getPluginConfiguration(pluginId),
+                    ApiClient.getVirtualFolders()
+                ]).then(function (results) {
+                    const config = results[0];
+                    const folders = results[1];
+
+                    document.querySelector('#Enabled').checked = config.Enabled !== false;
+                    document.querySelector('#UpscalerExecutable').value = config.UpscalerExecutable || 'realesrgan-ncnn-vulkan';
+                    document.querySelector('#ModelPath').value = config.ModelPath || '';
+                    document.querySelector('#ModelName').value = config.ModelName || 'realesrgan-x4plus';
+                    document.querySelector('#TileSize').value = Number.isFinite(config.TileSize) ? config.TileSize : 0;
+                    document.querySelector('#GpuId').value = Number.isFinite(config.GpuId) ? config.GpuId : -1;
+                    document.querySelector('#EnableTta').checked = config.EnableTta === true;
+                    document.querySelector('#KeepOriginalBackup').checked = config.KeepOriginalBackup !== false;
+                    renderLibraries(folders, config.SelectedLibraryIds);
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (error) {
+                    console.error('Background Upscaler configuration load failed', error);
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.Enabled = document.querySelector('#Enabled').checked;
+                    config.SelectedLibraryIds = Array.from(document.querySelectorAll('.libraryToggle:checked')).map(function (node) { return node.value; });
+                    config.UpscalerExecutable = document.querySelector('#UpscalerExecutable').value.trim();
+                    config.ModelPath = document.querySelector('#ModelPath').value.trim();
+                    config.ModelName = document.querySelector('#ModelName').value;
+                    config.TileSize = parseInt(document.querySelector('#TileSize').value, 10) || 0;
+                    config.GpuId = parseInt(document.querySelector('#GpuId').value, 10);
+                    if (Number.isNaN(config.GpuId)) {
+                        config.GpuId = -1;
+                    }
+                    config.EnableTta = document.querySelector('#EnableTta').checked;
+                    config.KeepOriginalBackup = document.querySelector('#KeepOriginalBackup').checked;
+
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                }).catch(function (error) {
+                    console.error('Background Upscaler configuration save failed', error);
+                    Dashboard.hideLoadingMsg();
+                });
+
+                return false;
+            });
+        }());
+    </script>
+</div>
+</body>
+</html>
