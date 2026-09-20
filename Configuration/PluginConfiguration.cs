@@ -7,7 +7,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
 {
     public bool Enabled { get; set; } = true;
     public string[] SelectedLibraryIds { get; set; } = Array.Empty<string>();
-    public string UpscalerExecutable { get; set; } = "realesrgan-ncnn-vulkan";
+    public string UpscalerExecutable { get; set; } = "/opt/realesrgan/realesrgan-ncnn-vulkan";
     public string ModelPath { get; set; } = string.Empty;
     public string ModelName { get; set; } = "realesrgan-x4plus";
     public int TileSize { get; set; }
