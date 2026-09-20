@@ -148,7 +148,7 @@
                     const folders = results[1];
 
                     document.querySelector('#Enabled').checked = config.Enabled !== false;
-                    document.querySelector('#UpscalerExecutable').value = config.UpscalerExecutable || 'realesrgan-ncnn-vulkan';
+                    document.querySelector('#UpscalerExecutable').value = config.UpscalerExecutable || '/opt/realesrgan/realesrgan-ncnn-vulkan';
                     document.querySelector('#ModelPath').value = config.ModelPath || '';
                     document.querySelector('#ModelName').value = config.ModelName || 'realesrgan-x4plus';
                     document.querySelector('#TileSize').value = Number.isFinite(config.TileSize) ? config.TileSize : 0;
