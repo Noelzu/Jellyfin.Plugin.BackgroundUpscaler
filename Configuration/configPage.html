@@ -11,8 +11,8 @@
             <form id="BackgroundUpscalerConfigForm">
                 <h2>Background Upscaler</h2>
                 <p>
-                    The scheduled task processes only local JPG, JPEG, PNG and WebP artwork whose real file dimensions are
-                    <strong>exactly 1920 × 1080</strong>. Real-ESRGAN performs a 2× AI upscale and the result must validate as
+                    The scheduled task processes only local <strong>Backdrop</strong> JPG, JPEG, PNG and WebP images whose real file dimensions are
+                    <strong>exactly 1920 × 1080</strong>. Posters/Primary images, thumbs, logos and banners are never processed. Real-ESRGAN performs a 2× AI upscale and the result must validate as
                     <strong>3840 × 2160</strong> before the original is replaced.
                 </p>
 
@@ -27,7 +27,7 @@
                 <h3>Affected libraries</h3>
                 <div id="LibraryList" class="paperList" style="padding: .5em 1em; margin-bottom: 1.5em;"></div>
                 <div class="fieldDescription" style="margin-top: -1em; margin-bottom: 1.5em;">
-                    Only artwork belonging to checked libraries is eligible. If no libraries are checked, nothing is processed.
+                    Only Backdrop images belonging to checked libraries are eligible. If no libraries are checked, nothing is processed.
                 </div>
 
                 <div class="inputContainer">
@@ -41,11 +41,11 @@
                 <div class="selectContainer">
                     <label class="selectLabel" for="ModelName">Model</label>
                     <select id="ModelName" is="emby-select" class="emby-select-withcolor emby-select">
-                        <option value="realesrgan-x4plus">realesrgan-x4plus — general artwork</option>
-                        <option value="realesrgan-x4plus-anime">realesrgan-x4plus-anime — anime / illustration</option>
-                        <option value="realesr-animevideov3">realesr-animevideov3 — animation, fast</option>
+                        <option value="realesr-animevideov3">realesr-animevideov3 — recommended for anime / lighter on iGPUs</option>
+                        <option value="realesrgan-x4plus-anime">realesrgan-x4plus-anime — heavier anime / illustration model</option>
+                        <option value="realesrgan-x4plus">realesrgan-x4plus — heavier general artwork model</option>
                     </select>
-                    <div class="fieldDescription">The task always requests scale 2; its output dimension is validated before replacement.</div>
+                    <div class="fieldDescription">The task always requests scale 2. realesr-animevideov3 is the recommended starting point for Intel iGPUs. Output dimensions are validated before replacement.</div>
                 </div>
 
                 <div class="inputContainer">
@@ -80,7 +80,17 @@
                         <span>Keep original backup</span>
                     </label>
                     <div class="fieldDescription">
-                        Before a successful replacement, creates <code>image.ext.backgroundupscale-original.bak</code> once. The .bak suffix prevents Jellyfin from treating it as artwork.
+                        Recommended. Before a successful replacement, creates <code>image.ext.backgroundupscale-original.bak</code> once. The .bak suffix prevents Jellyfin from treating it as artwork.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="SingleImageTestMode" type="checkbox" is="emby-checkbox" />
+                        <span>Single-image test mode</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Processes at most one eligible Backdrop per scheduled-task run. Use this when testing a new GPU, model or tile size before enabling a full batch.
                     </div>
                 </div>
 
@@ -150,11 +160,12 @@
                     document.querySelector('#Enabled').checked = config.Enabled !== false;
                     document.querySelector('#UpscalerExecutable').value = config.UpscalerExecutable || '/opt/realesrgan/realesrgan-ncnn-vulkan';
                     document.querySelector('#ModelPath').value = config.ModelPath || '';
-                    document.querySelector('#ModelName').value = config.ModelName || 'realesrgan-x4plus';
+                    document.querySelector('#ModelName').value = config.ModelName || 'realesr-animevideov3';
                     document.querySelector('#TileSize').value = Number.isFinite(config.TileSize) ? config.TileSize : 0;
                     document.querySelector('#GpuId').value = Number.isFinite(config.GpuId) ? config.GpuId : -1;
                     document.querySelector('#EnableTta').checked = config.EnableTta === true;
                     document.querySelector('#KeepOriginalBackup').checked = config.KeepOriginalBackup !== false;
+                    document.querySelector('#SingleImageTestMode').checked = config.SingleImageTestMode === true;
                     renderLibraries(folders, config.SelectedLibraryIds);
                     Dashboard.hideLoadingMsg();
                 }).catch(function (error) {
@@ -180,6 +191,7 @@
                     }
                     config.EnableTta = document.querySelector('#EnableTta').checked;
                     config.KeepOriginalBackup = document.querySelector('#KeepOriginalBackup').checked;
+                    config.SingleImageTestMode = document.querySelector('#SingleImageTestMode').checked;
 
                     return ApiClient.updatePluginConfiguration(pluginId, config);
                 }).then(function (result) {
