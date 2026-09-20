@@ -11,8 +11,9 @@
             <form id="BackgroundUpscalerConfigForm">
                 <h2>Background Upscaler</h2>
                 <p>
-                    The scheduled task processes only local <strong>Backdrop</strong> JPG, JPEG, PNG and WebP images whose real file dimensions are
-                    <strong>exactly 1920 × 1080</strong>. Posters/Primary images, thumbs, logos and banners are never processed. Real-ESRGAN performs a 2× AI upscale and the result must validate as
+                    The scheduled task processes local <strong>Backdrop</strong> JPG, JPEG, PNG and WebP images whose real file dimensions are
+                    <strong>exactly 1920 × 1080</strong>, plus optional <strong>1280 × 720</strong> Backdrops when enabled below.
+                    Posters/Primary images, thumbs, logos and banners are never processed. Real-ESRGAN uses 2× for 1080p and 3× for 720p so the result must validate as
                     <strong>3840 × 2160</strong> before the original is replaced.
                 </p>
 
@@ -72,6 +73,16 @@
                         <span>Enable TTA</span>
                     </label>
                     <div class="fieldDescription">Can improve results slightly but substantially increases processing time.</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="Include720pBackdrops" type="checkbox" is="emby-checkbox" />
+                        <span>Also include exact 1280 × 720 Backdrops</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Off by default. When enabled, exact 1280 × 720 Backdrops are AI-upscaled 3× to 3840 × 2160. Exact 1920 × 1080 Backdrops continue to use 2×.
+                    </div>
                 </div>
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
@@ -165,6 +176,7 @@
                     document.querySelector('#GpuId').value = Number.isFinite(config.GpuId) ? config.GpuId : -1;
                     document.querySelector('#EnableTta').checked = config.EnableTta === true;
                     document.querySelector('#KeepOriginalBackup').checked = config.KeepOriginalBackup !== false;
+                    document.querySelector('#Include720pBackdrops').checked = config.Include720pBackdrops === true;
                     document.querySelector('#SingleImageTestMode').checked = config.SingleImageTestMode === true;
                     renderLibraries(folders, config.SelectedLibraryIds);
                     Dashboard.hideLoadingMsg();
@@ -191,6 +203,7 @@
                     }
                     config.EnableTta = document.querySelector('#EnableTta').checked;
                     config.KeepOriginalBackup = document.querySelector('#KeepOriginalBackup').checked;
+                    config.Include720pBackdrops = document.querySelector('#Include720pBackdrops').checked;
                     config.SingleImageTestMode = document.querySelector('#SingleImageTestMode').checked;
 
                     return ApiClient.updatePluginConfiguration(pluginId, config);
