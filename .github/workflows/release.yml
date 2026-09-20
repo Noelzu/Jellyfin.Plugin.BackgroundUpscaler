@@ -139,3 +139,5 @@ jobs:
           git add manifest.json
           git commit -m "Update manifest for v${{ steps.version.outputs.version }}"
           git push origin HEAD:main
+
+# Bootstrap trigger
