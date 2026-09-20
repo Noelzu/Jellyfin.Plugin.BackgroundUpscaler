@@ -2,6 +2,10 @@ name: Build Jellyfin Release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
@@ -135,3 +139,5 @@ jobs:
           git add manifest.json
           git commit -m "Update manifest for v${{ steps.version.outputs.version }}"
           git push origin HEAD:main
+
+# Trigger 12.1.0.5 release
