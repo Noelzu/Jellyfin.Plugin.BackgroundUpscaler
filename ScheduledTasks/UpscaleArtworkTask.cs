@@ -46,9 +46,9 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         _imageProcessor = imageProcessor;
     }
 
-    public string Name => "Upscale exact 1080p artwork to 4K";
+    public string Name => "Upscale exact 1080p Backdrops to 4K";
     public string Key => "BackgroundUpscalerExact1080To4K";
-    public string Description => "Uses Real-ESRGAN to enhance local artwork that is exactly 1920x1080 and replace it with a validated 3840x2160 result.";
+    public string Description => "Uses Real-ESRGAN to enhance local Backdrop images that are exactly 1920x1080 and replace them with a validated 3840x2160 result.";
     public string Category => "Background Upscaler";
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -108,11 +108,12 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
         var items = _libraryManager.GetItemList(query);
         _logger.LogInformation(
-            "Scanning {ItemCount} items in {LibraryCount} selected libraries for exact {SourceWidth}x{SourceHeight} artwork.",
+            "Scanning {ItemCount} items in {LibraryCount} selected libraries for exact {SourceWidth}x{SourceHeight} Backdrop images only. SingleImageTestMode={SingleImageTestMode}.",
             items.Count,
             selectedLibraryIds.Length,
             SourceWidth,
-            SourceHeight);
+            SourceHeight,
+            config.SingleImageTestMode);
 
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var eligible = 0;
@@ -120,6 +121,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         var repairedMetadata = 0;
         var failed = 0;
         var unsupported = 0;
+        var stopAfterCurrentEligibleImage = false;
 
         for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
         {
@@ -130,6 +132,13 @@ public sealed class UpscaleArtworkTask : IScheduledTask
             foreach (var imageInfo in item.ImageInfos)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Background Upscaler is deliberately Backdrop-only. Never touch posters,
+                // Primary images, thumbs, logos, banners or other Jellyfin image types.
+                if (imageInfo.Type != ImageType.Backdrop)
+                {
+                    continue;
+                }
 
                 if (!IsSupportedLocalImage(imageInfo))
                 {
@@ -144,11 +153,12 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                 var sourcePath = imageInfo.Path;
                 if (!File.Exists(sourcePath))
                 {
-                    _logger.LogDebug("Skipping missing artwork file {Path} for item {ItemName} ({ItemId}).", sourcePath, item.Name, item.Id);
+                    _logger.LogDebug("Skipping missing Backdrop file {Path} for item {ItemName} ({ItemId}).", sourcePath, item.Name, item.Id);
                     continue;
                 }
 
                 var firstReference = seenPaths.Add(sourcePath);
+                var attemptedEligibleImage = false;
 
                 try
                 {
@@ -177,14 +187,17 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                     }
 
                     eligible++;
+                    attemptedEligibleImage = true;
                     _logger.LogInformation(
-                        "Upscaling {ImageType} for {ItemName} ({ItemId}): {Path}",
-                        imageInfo.Type,
+                        "Upscaling Backdrop for {ItemName} ({ItemId}) with model {ModelName}: {Path}",
                         item.Name,
                         item.Id,
+                        config.ModelName,
                         sourcePath);
 
+                    var stopwatch = Stopwatch.StartNew();
                     await UpscaleAndReplaceAsync(sourcePath, upscalerExecutable, config, cancellationToken).ConfigureAwait(false);
+                    stopwatch.Stop();
 
                     var finalDimensions = _imageProcessor.GetImageDimensions(sourcePath);
                     if (finalDimensions.Width != TargetWidth || finalDimensions.Height != TargetHeight)
@@ -196,6 +209,13 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                     ApplyUpdatedImageMetadata(imageInfo, sourcePath);
                     itemDirty = true;
                     upscaled++;
+
+                    _logger.LogInformation(
+                        "Upscaled Backdrop for {ItemName} ({ItemId}) in {Elapsed}: {Path}",
+                        item.Name,
+                        item.Id,
+                        stopwatch.Elapsed.ToString(@"hh\:mm\:ss\.f", CultureInfo.InvariantCulture),
+                        sourcePath);
                 }
                 catch (OperationCanceledException)
                 {
@@ -206,10 +226,23 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                     failed++;
                     _logger.LogError(
                         ex,
-                        "Failed to upscale artwork {Path} for {ItemName} ({ItemId}). The task will continue with the next image.",
+                        "Failed to upscale Backdrop {Path} for {ItemName} ({ItemId}). The task will continue with the next image.",
                         imageInfo.Path,
                         item.Name,
                         item.Id);
+                }
+                finally
+                {
+                    if (config.SingleImageTestMode && attemptedEligibleImage)
+                    {
+                        stopAfterCurrentEligibleImage = true;
+                    }
+                }
+
+                if (stopAfterCurrentEligibleImage)
+                {
+                    _logger.LogInformation("Single-image test mode processed one eligible Backdrop; stopping this task run.");
+                    break;
                 }
             }
 
@@ -231,6 +264,11 @@ public sealed class UpscaleArtworkTask : IScheduledTask
             }
 
             progress.Report(items.Count == 0 ? 100 : ((itemIndex + 1) * 100d / items.Count));
+
+            if (stopAfterCurrentEligibleImage)
+            {
+                break;
+            }
         }
 
         progress.Report(100);
@@ -245,6 +283,11 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
     private static bool IsSupportedLocalImage(ItemImageInfo imageInfo)
     {
+        if (imageInfo.Type != ImageType.Backdrop)
+        {
+            return false;
+        }
+
         if (!imageInfo.IsLocalFile || string.IsNullOrWhiteSpace(imageInfo.Path))
         {
             return false;
@@ -364,7 +407,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         startInfo.ArgumentList.Add("-s");
         startInfo.ArgumentList.Add("2");
         startInfo.ArgumentList.Add("-n");
-        startInfo.ArgumentList.Add(string.IsNullOrWhiteSpace(config.ModelName) ? "realesrgan-x4plus" : config.ModelName.Trim());
+        startInfo.ArgumentList.Add(string.IsNullOrWhiteSpace(config.ModelName) ? "realesr-animevideov3" : config.ModelName.Trim());
         startInfo.ArgumentList.Add("-t");
         startInfo.ArgumentList.Add(Math.Max(0, config.TileSize).ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add("-f");
