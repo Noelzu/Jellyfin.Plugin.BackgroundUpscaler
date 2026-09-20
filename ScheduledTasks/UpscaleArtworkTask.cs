@@ -92,7 +92,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
             return;
         }
 
-        ValidateExecutableConfiguration(config);
+        var upscalerExecutable = ResolveExecutablePath(config);
 
         var query = new InternalItemsQuery
         {
@@ -184,7 +184,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
                         item.Id,
                         sourcePath);
 
-                    await UpscaleAndReplaceAsync(sourcePath, config, cancellationToken).ConfigureAwait(false);
+                    await UpscaleAndReplaceAsync(sourcePath, upscalerExecutable, config, cancellationToken).ConfigureAwait(false);
 
                     var finalDimensions = _imageProcessor.GetImageDimensions(sourcePath);
                     if (finalDimensions.Width != TargetWidth || finalDimensions.Height != TargetHeight)
@@ -261,22 +261,43 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         imageInfo.BlurHash = null;
     }
 
-    private static void ValidateExecutableConfiguration(PluginConfiguration config)
+    private string ResolveExecutablePath(PluginConfiguration config)
     {
-        if (string.IsNullOrWhiteSpace(config.UpscalerExecutable))
+        var configured = config.UpscalerExecutable?.Trim();
+        if (string.IsNullOrWhiteSpace(configured))
         {
-            throw new InvalidOperationException("Real-ESRGAN executable is not configured.");
+            configured = "/opt/realesrgan/realesrgan-ncnn-vulkan";
         }
 
-        if ((config.UpscalerExecutable.Contains(Path.DirectorySeparatorChar)
-             || config.UpscalerExecutable.Contains(Path.AltDirectorySeparatorChar))
-            && !File.Exists(config.UpscalerExecutable))
+        if (configured.Contains(Path.DirectorySeparatorChar)
+            || configured.Contains(Path.AltDirectorySeparatorChar))
         {
-            throw new FileNotFoundException("Configured Real-ESRGAN executable does not exist.", config.UpscalerExecutable);
+            if (!File.Exists(configured))
+            {
+                throw new FileNotFoundException("Configured Real-ESRGAN executable does not exist.", configured);
+            }
+
+            _logger.LogInformation("Using Real-ESRGAN executable: {Executable}", configured);
+            return configured;
         }
+
+        var dockerPath = Path.Combine("/opt/realesrgan", configured);
+        if (File.Exists(dockerPath))
+        {
+            _logger.LogInformation(
+                "Resolved Real-ESRGAN executable {Configured} to {Executable}.",
+                configured,
+                dockerPath);
+            return dockerPath;
+        }
+
+        _logger.LogInformation(
+            "Using Real-ESRGAN executable name {Executable} from PATH.",
+            configured);
+        return configured;
     }
 
-    private async Task UpscaleAndReplaceAsync(string sourcePath, PluginConfiguration config, CancellationToken cancellationToken)
+    private async Task UpscaleAndReplaceAsync(string sourcePath, string upscalerExecutable, PluginConfiguration config, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(sourcePath);
         var format = GetRealEsrganFormat(extension);
@@ -288,7 +309,7 @@ public sealed class UpscaleArtworkTask : IScheduledTask
 
         try
         {
-            await RunRealEsrganAsync(sourcePath, tempPath, format, config, cancellationToken).ConfigureAwait(false);
+            await RunRealEsrganAsync(sourcePath, tempPath, format, upscalerExecutable, config, cancellationToken).ConfigureAwait(false);
 
             if (!File.Exists(tempPath) || new FileInfo(tempPath).Length == 0)
             {
@@ -323,12 +344,13 @@ public sealed class UpscaleArtworkTask : IScheduledTask
         string sourcePath,
         string outputPath,
         string format,
+        string upscalerExecutable,
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = config.UpscalerExecutable.Trim(),
+            FileName = upscalerExecutable,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
